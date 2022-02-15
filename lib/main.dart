@@ -1,115 +1,196 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:async';
+
+import 'package:webview_windows/webview_windows.dart';
+
+final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
-        primarySwatch: Colors.blue,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
+    return MaterialApp(navigatorKey: navigatorKey, home: ExampleBrowser());
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({Key? key, required this.title}) : super(key: key);
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class ExampleBrowser extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<ExampleBrowser> createState() => _ExampleBrowser();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+class _ExampleBrowser extends State<ExampleBrowser> {
+  final _controller = WebviewController();
+  final _textController = TextEditingController();
+  bool _isWebviewSuspended = false;
 
   @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+  void initState() {
+    super.initState();
+    initPlatformState();
+  }
+
+  Future<void> initPlatformState() async {
+    // Optionally initialize the webview environment using
+    // a custom user data directory
+    // and/or a custom browser executable directory
+    // and/or custom chromium command line flags
+    //await WebviewController.initializeEnvironment(
+    //    additionalArguments: '--show-fps-counter');
+
+    try {
+      await _controller.initialize();
+      _controller.url.listen((url) {
+        _textController.text = url;
+      });
+
+      await _controller.setBackgroundColor(Colors.transparent);
+      await _controller.setPopupWindowPolicy(WebviewPopupWindowPolicy.deny);
+      await _controller.loadUrl('https://flutter.dev');
+
+      if (!mounted) return;
+      setState(() {});
+    } on PlatformException catch (e) {
+      WidgetsBinding.instance?.addPostFrameCallback((_) {
+        showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+                  title: Text('Error'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Code: ${e.code}'),
+                      Text('Message: ${e.message}'),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      child: Text('Continue'),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                    )
+                  ],
+                ));
+      });
+    }
+  }
+
+  Widget compositeView() {
+    if (!_controller.value.isInitialized) {
+      return const Text(
+        'Not Initialized',
+        style: TextStyle(
+          fontSize: 24.0,
+          fontWeight: FontWeight.w900,
+        ),
+      );
+    } else {
+      return Padding(
+        padding: EdgeInsets.all(20),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+          children: [
+            Card(
+              elevation: 0,
+              child: TextField(
+                decoration: InputDecoration(
+                    hintText: 'URL',
+                    contentPadding: EdgeInsets.all(10.0),
+                    suffixIcon: IconButton(
+                      icon: Icon(Icons.refresh),
+                      onPressed: () {
+                        _controller.reload();
+                      },
+                    )),
+                textAlignVertical: TextAlignVertical.center,
+                controller: _textController,
+                onSubmitted: (val) {
+                  _controller.loadUrl(val);
+                },
+              ),
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
+            Expanded(
+                child: Card(
+                    color: Colors.transparent,
+                    elevation: 0,
+                    clipBehavior: Clip.antiAliasWithSaveLayer,
+                    child: Stack(
+                      children: [
+                        Webview(
+                          _controller,
+                          permissionRequested: _onPermissionRequested,
+                        ),
+                        StreamBuilder<LoadingState>(
+                            stream: _controller.loadingState,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasData && snapshot.data == LoadingState.loading) {
+                                return LinearProgressIndicator();
+                              } else {
+                                return SizedBox();
+                              }
+                            }),
+                      ],
+                    ))),
           ],
         ),
-      ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+        tooltip: _isWebviewSuspended ? 'Resume webview' : 'Suspend webview',
+        onPressed: () async {
+          if (_isWebviewSuspended) {
+            await _controller.resume();
+          } else {
+            await _controller.suspend();
+          }
+          setState(() {
+            _isWebviewSuspended = !_isWebviewSuspended;
+          });
+        },
+        child: Icon(_isWebviewSuspended ? Icons.play_arrow : Icons.pause),
+      ),
+      appBar: AppBar(
+          title: StreamBuilder<String>(
+        stream: _controller.title,
+        builder: (context, snapshot) {
+          return Text(snapshot.hasData ? snapshot.data! : 'WebView (Windows) Example');
+        },
+      )),
+      body: Center(
+        child: compositeView(),
+      ),
     );
+  }
+
+  Future<WebviewPermissionDecision> _onPermissionRequested(
+      String url, WebviewPermissionKind kind, bool isUserInitiated) async {
+    final decision = await showDialog<WebviewPermissionDecision>(
+      context: navigatorKey.currentContext!,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('WebView permission requested'),
+        content: Text('WebView has requested permission \'$kind\''),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, WebviewPermissionDecision.deny),
+            child: const Text('Deny'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, WebviewPermissionDecision.allow),
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
+    );
+
+    return decision ?? WebviewPermissionDecision.none;
   }
 }
